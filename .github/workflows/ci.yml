@@ -31,20 +31,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest
 
-      - name: Confirm the game still has no runtime dependencies
-        run: |
-          pip freeze --exclude pytest --exclude pip --exclude iniconfig \
-            --exclude packaging --exclude pluggy --exclude Pygments \
-            --exclude exceptiongroup --exclude tomli > extra.txt
-          if [ -s extra.txt ]; then
-            echo "Unexpected runtime dependencies appeared:"; cat extra.txt; exit 1
-          fi
-          echo "None, as intended."
-
+      # Tests run before any auxiliary check, so a problem with a guard can
+      # never skip the suite and hide whether the code actually works.
       - name: Run tests
         run: pytest tests/ -v
 
-      - name: Import the package without a terminal
-        # Catches import-time curses calls, which would break any environment
-        # that imports the module outside a real TTY.
-        run: python -c "import snake; print('import OK')"
+      - name: Confirm the game has no runtime dependencies
+        # "No dependencies" is a stated feature, so assert it rather than
+        # trust it - but assert it properly. This step previously diffed
+        # `pip freeze` against an allowlist, which failed on 3.10 and 3.11:
+        # those versions seed a new venv with setuptools and wheel, while
+        # 3.12+ do not. Nothing to do with this project.
+        #
+        # The honest test is whether the package imports where nothing at all
+        # is installed. --without-pip gives exactly that environment, and the
+        # repo root as cwd is what puts `snake` on sys.path.
+        #
+        # It doubles as a headless-import check: there is no TTY here, so a
+        # curses call at import time fails loudly in CI rather than in
+        # somebody's terminal.
+        run: |
+          python -m venv --without-pip /tmp/bare-env
+          /tmp/bare-env/bin/python -c "import snake; print('imports with zero packages installed')"
